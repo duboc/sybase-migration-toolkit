@@ -1,0 +1,69 @@
+{
+  "agents": {
+    "overrides": {
+      "sybase-inventory": {
+        "enabled": true,
+        "runConfig": {
+          "maxTurns": 50,
+          "maxTimeMinutes": 20
+        }
+      },
+      "dead-component": {
+        "enabled": true,
+        "runConfig": {
+          "maxTurns": 30,
+          "maxTimeMinutes": 15
+        }
+      },
+      "data-flow": {
+        "enabled": true,
+        "runConfig": {
+          "maxTurns": 40,
+          "maxTimeMinutes": 15
+        }
+      },
+      "integration-catalog": {
+        "enabled": true,
+        "runConfig": {
+          "maxTurns": 30,
+          "maxTimeMinutes": 15
+        }
+      },
+      "risk-assessment": {
+        "enabled": true,
+        "runConfig": {
+          "maxTurns": 40,
+          "maxTimeMinutes": 20
+        }
+      },
+      "spanner-schema": {
+        "enabled": true,
+        "runConfig": {
+          "maxTurns": 40,
+          "maxTimeMinutes": 20
+        }
+      },
+      "service-extraction": {
+        "enabled": true,
+        "runConfig": {
+          "maxTurns": 40,
+          "maxTimeMinutes": 20
+        }
+      },
+      "modernization": {
+        "enabled": true,
+        "runConfig": {
+          "maxTurns": 40,
+          "maxTimeMinutes": 15
+        }
+      },
+      "migration-orchestrator": {
+        "enabled": true,
+        "runConfig": {
+          "maxTurns": 50,
+          "maxTimeMinutes": 30
+        }
+      }
+    }
+  }
+}
