@@ -312,44 +312,11 @@ graph TD
 
 ## Report Output Format
 
-Each report follows this structure:
+All three reports (07, 08, 12) follow the canonical toolkit template at `agents/references/report-template.md`. Read that file before writing the first report.
 
-```markdown
-# [Report Title]
-
-**Subject:** [Short descriptive title]
-**Status:** [Draft | In Progress | Complete | Requires Review]
-**Date:** [YYYY-MM-DD]
-**Author:** Gemini CLI
-**Topic:** [One-sentence summary of analysis scope]
-
----
-
-## 1. Analysis Summary
-### Scope
-### Key Findings
-
-## 2. Detailed Analysis
-### Primary Finding
-### Technical Deep Dive
-### Historical Context
-### Contributing Factors
-
-## 3. Impact Analysis
-| Area | Impact | Severity | Details |
-
-## 4. Affected Components
-
-## 5. Reference Material
-
-## 6. Recommendations
-### Option A (Recommended)
-### Option B
-
-## 7. Dependencies & Prerequisites
-
-## 8. Verification Criteria
-```
+Deviations specific to this agent:
+- Section 3 ("Detailed Findings") must include a Mermaid `flowchart LR` diagram for cross-database references (report 07) and replication topology (report 12).
+- Section 5 ("Affected Components") groups by source database, then by destination database.
 
 ## Guidelines
 

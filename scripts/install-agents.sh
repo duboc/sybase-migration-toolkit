@@ -201,6 +201,14 @@ if [[ "$INSTALL_AGENTS" == true ]]; then
     fi
   done
 
+  # Install shared agent references (canonical report template, etc.).
+  if [[ -d "${AGENT_SOURCE}/references" ]]; then
+    mkdir -p "${AGENT_INSTALL_DIR}/references"
+    cp "${AGENT_SOURCE}/references"/*.md "${AGENT_INSTALL_DIR}/references"/ 2>/dev/null || true
+    REF_COUNT=$(find "${AGENT_INSTALL_DIR}/references" -maxdepth 1 -name '*.md' | wc -l)
+    echo "  Installed: ${REF_COUNT} reference file(s) under references/"
+  fi
+
   echo ""
   echo "${AGENT_COUNT} agents installed to ${AGENT_INSTALL_DIR}"
 fi

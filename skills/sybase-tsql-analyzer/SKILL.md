@@ -25,11 +25,30 @@ When a user asks to analyze Sybase T-SQL code, inventory Sybase stored procedure
 4. Map dependencies and cross-database references.
 5. Generate the full inventory report with Spanner compatibility matrix and Mermaid dependency graph.
 
+## Bundled tooling
+
+This skill ships a deterministic extractor at `scripts/extract_procedures.py`. **Use it before reading individual SQL files yourself** — it walks the project, parses every CREATE PROCEDURE / TRIGGER / FUNCTION / VIEW, and emits structured JSON with line counts, parameter counts, complexity hints, cross-database references, and signal flags (cursor use, dynamic SQL, temp tables, transactions, etc.). You then reason about the JSON instead of re-doing regex on raw DDL.
+
+```bash
+# Full JSON for every object found under the project source path
+./scripts/extract_procedures.py <project-root>
+
+# Indented for inspection
+./scripts/extract_procedures.py <project-root> --pretty
+
+# One-line counts (use this first to gauge scope)
+./scripts/extract_procedures.py <project-root> --summary
+```
+
+Output schema is documented in the script docstring. The script never connects to a live database, never raises tracebacks on partial failures, and exits 0 on success even if some files fail to parse (errors go to stderr).
+
 ## Workflow
 
 ### Step 1: Schema Discovery
 
-Locate and parse Sybase DDL sources. Scan these file types in order:
+Run `scripts/extract_procedures.py --summary` first to get object counts by type and complexity. Then run without `--summary` to get the full per-object JSON. Only fall back to manual file reading if the extractor reports failures or you need source not covered by `*.sql / *.ddl / *.syb / *.ase`.
+
+If you must scan manually, the source types in priority order are:
 
 | Source | What to Look For |
 |--------|-----------------|
