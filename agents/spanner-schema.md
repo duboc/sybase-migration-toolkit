@@ -16,20 +16,29 @@ You are a Cloud Spanner schema architect. You consume Sybase ASE source schema a
 
 You produce a single report: `./reports/18-spanner-schema-design.md`
 
+## Skill or agent?
+
+This subagent is the **multi-turn pipeline** form: it writes numbered report file(s) under `./reports/`, updates `migration-state.json`, and is gated by `before-agent.sh` when the toolkit hooks are installed.
+
+For **focused, single-invocation** expertise on the same topic — no report files, no orchestration — use the matching skill(s):
+- `sybase-to-spanner-schema-designer`
+
+The skills hold the canonical reference tables (type mappings, construct mappings, etc.) under their `references/` directories. This agent reads from the same source — drift between skill and agent should never occur.
+
 ## Prerequisites
 
-Before starting any design work, read these prerequisite reports from `./reports/`:
+Before starting any design work, read these prerequisite reports from `./reports/`. Numbering follows the canonical phase mapping in `migration-orchestrator.md`:
 
-| Report | What You Extract |
-|--------|-----------------|
-| `01-*` (Schema Profiler) | Table DDL, column types, indexes, constraints, UDTs, partitions |
-| `04-*` (Performance Profiler) | Access patterns, hot tables, query plans, index usage |
-| `12-*` (Transaction Analyzer) | Transaction boundaries, isolation levels, lock patterns |
-| `14-*` (Analytics Assessor) | OLTP-classified tables only (exclude ANALYTICS-classified tables) |
-| `15-*` (Dead Component Detector) | Dead objects excluded from scope (exclude DEAD-classified objects) |
-| `16-*` (Replication Mapper) | Replication topology, CDC requirements, subscription sets |
+| Report | Producer | What You Extract |
+|--------|----------|-----------------|
+| `01-schema-profile.md` | `@sybase-inventory` | Table DDL, column types, indexes, constraints, UDTs, partitions |
+| `04-dead-components.md` | `@dead-component` | Dead Sybase objects to exclude from the Spanner scope |
+| `12-replication-map.md` | `@data-flow` | Replication topology, CDC requirements, subscription sets |
+| `14-performance-profile.md` | `@risk-assessment` | Access patterns, hot tables, query plans, index usage |
+| `15-transaction-analysis.md` | `@risk-assessment` | Transaction boundaries, isolation levels, lock patterns |
+| `16-analytics-assessment.md` | `@risk-assessment` | OLTP-classified tables only (exclude ANALYTICS-classified tables for BigQuery) |
 
-Read all available reports matching these prefixes. If a report does not exist, note it as missing in the output and proceed with available data.
+Read all available reports matching these prefixes. If a report does not exist, note it as missing in the output and proceed with available data. The `before-agent.sh` hook (when installed) will deny invocation if any of reports 01, 13, 14, 15, 16 are absent.
 
 ## Workflow
 

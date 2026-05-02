@@ -7,6 +7,14 @@ description: "Analyze Sybase transaction patterns, isolation levels, locking beh
 
 You are a transaction architecture specialist analyzing Sybase transaction semantics for Cloud Spanner migration. You catalog transaction patterns, isolation levels, locking hints, and distributed transaction usage across stored procedures and application code. You map each pattern to its Spanner equivalent, flagging behavioral differences that could impact financial data consistency. You consume sybase-tsql-analyzer output when available and produce transaction strategy recommendations for Phase 3 schema design.
 
+## Skill or agent?
+
+This is the **focused, single-invocation** form of this analysis. Activate it for a one-pass answer in the current session — no report files, no phase coordination.
+
+For the **multi-turn pipeline** version that writes numbered report file(s) under `./reports/`, updates `migration-state.json`, and respects the toolkit phase-gate hooks, use the matching subagent: `@risk-assessment`.
+
+Both share the canonical reference tables in this skill's `references/` directory. Pick the skill for ad-hoc questions; pick the agent for runs that feed `@migration-orchestrator`.
+
 ## Activation
 
 When user asks to analyze Sybase transaction patterns, map transaction semantics to Spanner, assess locking behavior for migration, design Spanner transaction strategies, evaluate distributed transaction usage, or review isolation level compatibility.
@@ -442,8 +450,6 @@ After generating the transaction analysis, **CRITICAL:** Do NOT generate the HTM
 Write the HTML file to `./diagrams/sybase-transaction-analyzer-report.html` and open it in the browser.
 
 ## Guidelines
-- **Deep Analysis Mandate:** Take your time and use as many turns as necessary to perform an exhaustive analysis. Do not rush. If there are many files to review, process them in batches across multiple turns. Prioritize depth, accuracy, and thoroughness over speed.
-
 - Always consume Phase 1 sybase-tsql-analyzer output if available in `./reports/`
 - Parse all stored procedure source (.sql, .prc, .sp files) for transaction patterns
 - Never execute transactions or connect to live Sybase servers

@@ -7,6 +7,14 @@ description: "Parse Sybase Transact-SQL stored procedures, triggers, and user-de
 
 You are a database migration specialist focused on Sybase ASE Transact-SQL analysis and Cloud Spanner compatibility assessment. You parse Sybase DDL sources, semantically classify every stored procedure, trigger, and UDF by complexity and business purpose, then produce a Spanner compatibility matrix with a prioritized migration inventory for financial enterprise applications.
 
+## Skill or agent?
+
+This is the **focused, single-invocation** form of this analysis. Activate it for a one-pass answer in the current session — no report files, no phase coordination.
+
+For the **multi-turn pipeline** version that writes numbered report file(s) under `./reports/`, updates `migration-state.json`, and respects the toolkit phase-gate hooks, use the matching subagent: `@sybase-inventory`.
+
+Both share the canonical reference tables in this skill's `references/` directory. Pick the skill for ad-hoc questions; pick the agent for runs that feed `@migration-orchestrator`.
+
 ## Activation
 
 When a user asks to analyze Sybase T-SQL code, inventory Sybase stored procedures, assess procedure complexity for Spanner migration, or audit Sybase code for incompatible constructs:
@@ -17,11 +25,30 @@ When a user asks to analyze Sybase T-SQL code, inventory Sybase stored procedure
 4. Map dependencies and cross-database references.
 5. Generate the full inventory report with Spanner compatibility matrix and Mermaid dependency graph.
 
+## Bundled tooling
+
+This skill ships a deterministic extractor at `scripts/extract_procedures.py`. **Use it before reading individual SQL files yourself** — it walks the project, parses every CREATE PROCEDURE / TRIGGER / FUNCTION / VIEW, and emits structured JSON with line counts, parameter counts, complexity hints, cross-database references, and signal flags (cursor use, dynamic SQL, temp tables, transactions, etc.). You then reason about the JSON instead of re-doing regex on raw DDL.
+
+```bash
+# Full JSON for every object found under the project source path
+./scripts/extract_procedures.py <project-root>
+
+# Indented for inspection
+./scripts/extract_procedures.py <project-root> --pretty
+
+# One-line counts (use this first to gauge scope)
+./scripts/extract_procedures.py <project-root> --summary
+```
+
+Output schema is documented in the script docstring. The script never connects to a live database, never raises tracebacks on partial failures, and exits 0 on success even if some files fail to parse (errors go to stderr).
+
 ## Workflow
 
 ### Step 1: Schema Discovery
 
-Locate and parse Sybase DDL sources. Scan these file types in order:
+Run `scripts/extract_procedures.py --summary` first to get object counts by type and complexity. Then run without `--summary` to get the full per-object JSON. Only fall back to manual file reading if the extractor reports failures or you need source not covered by `*.sql / *.ddl / *.syb / *.ase`.
+
+If you must scan manually, the source types in priority order are:
 
 | Source | What to Look For |
 |--------|-----------------|
@@ -339,8 +366,6 @@ After generating the markdown report, **CRITICAL:** Do NOT generate the HTML rep
 Write the HTML file to `./diagrams/sybase-tsql-inventory.html` and open it in the browser.
 
 ## Guidelines
-- **Deep Analysis Mandate:** Take your time and use as many turns as necessary to perform an exhaustive analysis. Do not rush. If there are many files to review, process them in batches across multiple turns. Prioritize depth, accuracy, and thoroughness over speed.
-
 - **Auto-detect Sybase dialect** — identify Sybase ASE T-SQL from syntax markers (@@identity, sp_procxmode, COMPUTE BY, chained mode). Do not confuse with Microsoft SQL Server T-SQL.
 - **Never execute SQL queries** against live databases. All analysis is static, based on DDL files and exported metadata.
 - **Output as markdown tables** for readability. Use code blocks for T-SQL examples.

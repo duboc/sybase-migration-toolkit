@@ -65,5 +65,84 @@
         }
       }
     }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "sybase-migration/session-start",
+            "type": "command",
+            "command": "__HOOKS_DIR__/session-start.sh",
+            "timeout": 5000,
+            "description": "Detect Sybase migration project and inject phase/state context."
+          }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "matcher": "write_file|replace|edit|create_file",
+        "hooks": [
+          {
+            "name": "sybase-migration/after-tool-report",
+            "type": "command",
+            "command": "__HOOKS_DIR__/after-tool-report.sh",
+            "timeout": 5000,
+            "description": "Update migration-state.json when a numbered report is written."
+          },
+          {
+            "name": "sybase-migration/audit-log-tool",
+            "type": "command",
+            "command": "__HOOKS_DIR__/audit-log.sh",
+            "timeout": 5000,
+            "description": "Append the tool call to the migration audit log."
+          }
+        ]
+      }
+    ],
+    "BeforeAgent": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "sybase-migration/before-agent",
+            "type": "command",
+            "command": "__HOOKS_DIR__/before-agent.sh",
+            "timeout": 5000,
+            "description": "Phase-gate validator: enforce report prerequisites."
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "sybase-migration/audit-log-notification",
+            "type": "command",
+            "command": "__HOOKS_DIR__/audit-log.sh",
+            "timeout": 5000,
+            "description": "Mirror notifications into the migration audit log."
+          }
+        ]
+      }
+    ],
+    "PreCompress": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "sybase-migration/pre-compress",
+            "type": "command",
+            "command": "__HOOKS_DIR__/pre-compress.sh",
+            "timeout": 5000,
+            "description": "Snapshot migration state before context compression."
+          }
+        ]
+      }
+    ]
   }
 }

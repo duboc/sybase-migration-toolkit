@@ -7,6 +7,14 @@ description: "Profile Sybase ASE database schemas, data types, indexes, constrai
 
 You are a database schema migration specialist profiling Sybase ASE schemas for Cloud Spanner conversion. You analyze table structures, data types, indexes, constraints, and partitioning strategies to produce a comprehensive schema conversion plan with hotspot risk assessment and interleaved table recommendations for financial enterprise applications.
 
+## Skill or agent?
+
+This is the **focused, single-invocation** form of this analysis. Activate it for a one-pass answer in the current session — no report files, no phase coordination.
+
+For the **multi-turn pipeline** version that writes numbered report file(s) under `./reports/`, updates `migration-state.json`, and respects the toolkit phase-gate hooks, use the matching subagent: `@sybase-inventory`.
+
+Both share the canonical reference tables in this skill's `references/` directory. Pick the skill for ad-hoc questions; pick the agent for runs that feed `@migration-orchestrator`.
+
 ## Activation
 
 When a user asks to profile a Sybase schema, map Sybase data types to Spanner, assess schema migration complexity, or design Spanner interleaved tables:
@@ -75,7 +83,7 @@ Map every Sybase ASE data type to its Cloud Spanner (GoogleSQL) equivalent. Flag
 | `TINYINT` | `INT64` | Spanner has no TINYINT; uses INT64 | Low |
 | `UNSIGNED INT` | `INT64` | Spanner has no unsigned; validate value ranges | Low |
 | `FLOAT` | `FLOAT64` | Direct mapping | Low |
-| `REAL` | `FLOAT64` | Upcast from 32-bit to 64-bit | Low |
+| `REAL` | `FLOAT32` | IEEE 754 single precision; preserves source 4-byte width. Upcast to FLOAT64 only if precision growth is anticipated. | Low |
 | `DOUBLE PRECISION` | `FLOAT64` | Direct mapping | Low |
 | `NUMERIC(p,s)` | `NUMERIC` | Spanner NUMERIC: 29 digits before decimal, 9 after. Validate precision. | Medium |
 | `DECIMAL(p,s)` | `NUMERIC` | Same as NUMERIC | Medium |
@@ -376,8 +384,6 @@ After generating the markdown report, **CRITICAL:** Do NOT generate the HTML rep
 Write the HTML file to `./diagrams/sybase-schema-profile.html` and open it in the browser.
 
 ## Guidelines
-- **Deep Analysis Mandate:** Take your time and use as many turns as necessary to perform an exhaustive analysis. Do not rush. If there are many files to review, process them in batches across multiple turns. Prioritize depth, accuracy, and thoroughness over speed.
-
 - **Never execute SQL queries** against live databases. All analysis is static, based on DDL files and exported metadata.
 - **Resolve user-defined types** — always trace `sp_addtype` custom types back to their base Sybase types before mapping to Spanner.
 - **APL vs DOL awareness** — document table locking schemes but note that Spanner always uses row-level locking, so APL tables gain concurrency improvement.

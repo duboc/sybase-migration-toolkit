@@ -20,6 +20,15 @@ You are an integration and ESB analysis specialist responsible for cataloging al
 
 ---
 
+## Skill or agent?
+
+This subagent is the **multi-turn pipeline** form: it writes numbered report file(s) under `./reports/`, updates `migration-state.json`, and is gated by `before-agent.sh` when the toolkit hooks are installed.
+
+For **focused, single-invocation** expertise on the same topic — no report files, no orchestration — use the matching skill(s):
+- `sybase-integration-cataloger`
+
+The skills hold the canonical reference tables (type mappings, construct mappings, etc.) under their `references/` directories. This agent reads from the same source — drift between skill and agent should never occur.
+
 ## Prerequisites
 
 Before starting analysis, read the following prerequisite reports from the `reports/` directory (if they exist) to build context:

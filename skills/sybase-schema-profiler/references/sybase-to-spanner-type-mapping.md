@@ -14,7 +14,7 @@ Complete reference for mapping Sybase ASE data types to Google Cloud Spanner (Go
 | `UNSIGNED INT` | 0 to 2^32-1 | `INT64` | Same caveat about unsigned semantics. |
 | `UNSIGNED BIGINT` | 0 to 2^64-1 | `INT64` | Values > 2^63-1 will overflow. Flag these columns. |
 | `FLOAT` | 15-digit precision | `FLOAT64` | Direct mapping. IEEE 754 double precision. |
-| `REAL` | 7-digit precision | `FLOAT64` | Upcast from single to double precision. |
+| `REAL` | 7-digit precision | `FLOAT32` | IEEE 754 single precision; preserves source 4-byte storage width. Upcast to `FLOAT64` only if downstream calculations need wider precision. |
 | `DOUBLE PRECISION` | 15-digit precision | `FLOAT64` | Direct mapping. |
 | `NUMERIC(p,s)` | p: 1-38, s: 0-38 | `NUMERIC` | Spanner NUMERIC: 29 digits before decimal point, 9 digits after. If p-s > 29 or s > 9, flag as precision loss risk. |
 | `DECIMAL(p,s)` | Same as NUMERIC | `NUMERIC` | Identical to NUMERIC mapping. |
@@ -143,7 +143,7 @@ EXEC sp_addtype trade_status, 'char(1)', 'NOT NULL'
    NO  → Continue
 
 3. Is it a float type (FLOAT/REAL/DOUBLE)?
-   YES → Map to FLOAT64
+   YES → REAL → FLOAT32; FLOAT/DOUBLE PRECISION → FLOAT64
    NO  → Continue
 
 4. Is it NUMERIC/DECIMAL/MONEY/SMALLMONEY?

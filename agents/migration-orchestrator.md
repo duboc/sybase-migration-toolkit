@@ -25,6 +25,15 @@ Financial compliance and data integrity are non-negotiable throughout the proces
 
 ---
 
+## Skill or agent?
+
+This subagent is the **multi-turn pipeline** form: it writes numbered report file(s) under `./reports/`, updates `migration-state.json`, and is gated by `before-agent.sh` when the toolkit hooks are installed.
+
+For **focused, single-invocation** expertise on the same topic — no report files, no orchestration — use the matching skill(s):
+- `sybase-spanner-migration-orchestrator`
+
+The skills hold the canonical reference tables (type mappings, construct mappings, etc.) under their `references/` directories. This agent reads from the same source — drift between skill and agent should never occur.
+
 ## The 9 Agents You Coordinate
 
 Each agent produces numbered report files in `./reports/`. You verify completeness by checking for these files.
@@ -67,53 +76,113 @@ To verify a report exists and is substantive (not just a stub):
 4. Check for key sections expected by downstream phases
 ```
 
+### Hook-Managed State (Read-Only for You)
+
+When the Sybase migration toolkit hooks are installed, several state artifacts are
+maintained automatically by the Gemini CLI hook layer. **Read these first** at the
+start of every turn before re-deriving state from disk:
+
+| Artifact | Maintained by | Use it for |
+|---|---|---|
+| `reports/migration-state.json` | `after-tool-report.sh` (AfterTool) | Current phase, last completed report, list of reports present. Source of truth across sessions. |
+| `.gemini/audit/migration-audit.jsonl` | `audit-log.sh` (AfterTool, Notification) | Forensic record of every tool call. Cite when summarizing what was done in a phase. |
+| `.gemini/snapshots/pre-compress-*.md` | `pre-compress.sh` (PreCompress) | Pre-compression snapshots. Read the most recent one when resuming after compaction. |
+
+You **do not need to write** `current_phase`, `last_completed_report`, or the `reports`
+list yourself — the AfterTool hook does that on every report write. You **may** add or
+update richer fields (e.g., `phase_gates`, `intake_answers`, `scoping_decisions`) and
+they will be preserved across hook updates because the hook merges with the existing
+state object.
+
+If `migration-state.json` does not exist on first load, that is expected on a fresh
+project — initialize it yourself with the intake/scoping fields once Step 0 is complete.
+
+The `before-agent.sh` hook will refuse to launch `@spanner-schema`, `@service-extraction`,
+`@modernization`, or `@risk-assessment` if their prerequisite reports are missing — when
+the user reports a phase-gate denial, your job is to identify the missing reports
+(listed in the deny reason) and instruct the user which upstream agent to run.
+
 ---
 
-## Step 0: Intake and Scoping (30-Question Assessment)
+## Step 0: Intake and Scoping
 
-Before running any phase, gather comprehensive context about the Sybase landscape and financial domain. Ask these questions in logical groups, allowing the user to answer in batches.
+Before launching the pipeline, gather **only the context that cannot be derived from source artifacts**. Phase 1 agents (`@sybase-inventory`, `@dead-component`) will discover the technical landscape — versions, table counts, type usage, schema features, integration endpoints — by reading DDL, ddlgen output, and code. Do not ask the user for anything those agents will produce.
 
-### Sybase Landscape Assessment (Questions 1-10)
+### Derive from artifacts (do not ask)
 
-1. **ASE Databases**: How many ASE instances and databases? Versions? (ASE 12.5, 15.x, 16.0, SAP ASE?)
-2. **IQ Databases**: Any Sybase IQ (SAP IQ) instances for analytics/reporting? Versions and data volumes?
-3. **Replication Server**: Is Sybase Replication Server in use? Topology (warm standby, multi-site, consolidation)?
-4. **Open Server Gateways**: Any Open Server applications acting as middleware or data gateways?
-5. **Database Sizes**: Total data volume per database, table counts, row counts for large tables
-6. **Schema Complexity**: Number of stored procedures, triggers, functions, views, computed columns
-7. **Data Types in Use**: Money, smallmoney, datetime, smalldatetime, image, text, unitext, Java types
-8. **Character Sets**: Is the ASE using UTF-8, ISO 8859-1, or another character set? Sort orders?
-9. **Partitioning**: Partition schemes in use (hash, range, list, round-robin)?
-10. **Security Model**: Sybase roles, grants, login-to-user mappings, proxy tables, encrypted columns?
+These are answered by Phase 1 outputs. Wait for the reports rather than asking the user:
 
-### Financial Domain Assessment (Questions 11-16)
+- ASE / IQ versions, database counts, table/proc/trigger counts, data types in use, partition schemes, encrypted columns, character sets — covered by `01-schema-profile.md`, `02-tsql-analysis.md`, `03-stored-proc-analysis.md`, `06-batch-scan.md`.
+- Replication Server topology, Open Server gateways, integration endpoints — covered by `09-integration-catalog.md`, `10-esb-catalog.md`, `12-replication-map.md`.
+- Object usage / dead components — covered by `04-dead-components.md`, `17-dead-code.md`.
 
-11. **Trading Systems**: Real-time trading platforms, order management, market data feeds?
-12. **Settlement and Clearing**: T+1/T+2 settlement processing, clearing house interfaces, SWIFT messaging?
-13. **Regulatory Reporting**: SOX financial reporting, MiFID II transaction reporting, Basel III/IV capital calculations?
-14. **Retail Banking**: Core banking, loan origination, payment processing, card management?
-15. **Risk Management**: Market risk calculations (VaR), credit risk scoring, counterparty risk?
-16. **Reference Data**: Security master, counterparty data, pricing data, corporate actions?
+If the user volunteers any of the above unprompted, capture it in `migration-state.json` under `intake_answers` so Phase 1 agents can verify rather than rediscover.
 
-### Compliance Requirements (Questions 17-23)
+### Ask the user (10 essentials)
 
-17. **SOX Compliance**: Financial reporting controls, audit trails, separation of duties
-18. **PCI-DSS**: Payment card data handling, encryption requirements, access controls
-19. **MiFID II**: Transaction reporting obligations, best execution data, client categorization
-20. **Dodd-Frank**: Swap reporting, clearing mandates, trade execution requirements
-21. **Basel III/IV**: Capital adequacy calculations, liquidity coverage ratio, risk-weighted assets
-22. **Data Residency**: Geographic constraints on data storage, cross-border data transfer rules
-23. **Audit Requirements**: Retention periods, immutable audit trails, regulatory access provisions
+Group these in batches of 3–4 so the user can answer rapidly:
 
-### Operational Context (Questions 24-30)
+**Compliance and policy (firm-specific, not in code)**
+1. **Regulatory scope:** Which of SOX, PCI-DSS, MiFID II, Dodd-Frank, Basel III/IV, GDPR, regional banking regulations (FFIEC, APRA, MAS, etc.) apply? Name the authoritative source per regime if available.
+2. **Data residency:** Geographic constraints on where Sybase data may live in Spanner (region selection). Cross-border transfer rules.
+3. **Audit retention:** Required retention period and immutability requirements for audit trails (e.g., "7 years immutable per SOX").
 
-24. **Market Hours Constraints**: Which markets and trading hours? Pre-market, after-hours windows?
-25. **Batch Windows**: End-of-day processing, month-end, quarter-end, year-end batch schedules?
-26. **SLA Requirements**: Uptime SLAs, transaction latency SLAs, recovery time objectives (RTO/RPO)?
-27. **Current Disaster Recovery**: Warm standby, companion servers, Replication Server DR?
-28. **Team Expertise**: DBA team size, cloud experience, Spanner familiarity, application development skills?
-29. **Timeline**: Target migration timeline, any regulatory deadlines driving the migration?
-30. **Budget**: Order of magnitude budget for the migration program?
+**Operational constraints (drive cutover and architecture)**
+4. **Business windows:** Market / business hours that constrain cutover timing. Quiet periods (overnight, weekends, quarter-end blackouts).
+5. **RTO / RPO targets:** Recovery time objective and recovery point objective for the new Spanner system. Drives multi-region vs. single-region.
+6. **Migration risk tolerance:** Big-bang vs. phased cutover vs. parallel-run. Acceptable downtime in minutes.
+
+**Project context (not derivable)**
+7. **Timeline drivers:** Hard deadlines (regulatory, contract, EOL of Sybase support). Soft deadlines (program goals).
+8. **Team capability:** Sybase DBA depth, Cloud / Spanner experience, application engineering capacity. Drives whether to upskill or partner.
+9. **Existing decisions:** Any predetermined choices the user has already locked (e.g., "Spring Boot 3 is mandated", "BigQuery is out of scope"). Capture and respect; do not re-debate.
+
+### Data-source intake (drives `before-agent.sh` adaptive gating)
+
+This is question **10**, but it is mechanically separate because the answers change which mode each downstream agent runs in. The `before-agent.sh` hook reads these fields directly from `migration-state.json` and emits a `systemMessage` to each downstream agent telling it whether to run in full mode, static-only mode, or skip a specific report.
+
+**Sometimes the user only has source code.** Do not assume telemetry exists. Ask explicitly:
+
+| Key | Question | Effect when `false` |
+|---|---|---|
+| `production_telemetry` | MDA-table dumps, `sp_sysmon` output, or other monitoring exports? | `@risk-assessment` reports 14/15 run static-only with REDUCED confidence; `@dead-component` report 04 runs static-only. |
+| `application_logs` | Application logs, APM data, or audit trails for Java / middle tier? | `@dead-component` report 17 runs static-only (zero-reference detection only). |
+| `replication_config` | Sybase Replication Server config files (`rs_*.cfg`, subscription dumps)? | `@data-flow` skips report 12 entirely; note the omission in report 07 §1. |
+| `iq_exports` | Sybase IQ schema or data exports (only if IQ is in scope)? | `@risk-assessment` report 16 IQ→BigQuery analysis incomplete; flag as gap. |
+| `git_history` | Full git history for the source repos (not just a snapshot)? | `@risk-assessment` report 13 cannot use churn-based scoring; uses complexity tags only. `@modernization` report 23 cannot use commit-history evidence. |
+
+`source_code` is always assumed `true` — the migration cannot proceed otherwise.
+
+### Persist intake to state
+
+After all 10 essentials are answered, write them to `reports/migration-state.json` as:
+
+```json
+{
+  "intake_answers": {
+    "regulatory_scope": [...],
+    "data_residency": "...",
+    "audit_retention_years": ...,
+    "business_windows": "...",
+    "rto_minutes": ...,
+    "rpo_minutes": ...,
+    "risk_tolerance": "phased | parallel | big-bang",
+    "timeline_drivers": "...",
+    "team_capability": {...},
+    "locked_decisions": [...],
+    "data_sources": {
+      "source_code": true,
+      "production_telemetry": false,
+      "application_logs": false,
+      "replication_config": true,
+      "iq_exports": false,
+      "git_history": true
+    }
+  }
+}
+```
+
+The AfterTool hook merges this into the existing state object on every report write, so writes by other agents do not clobber your intake fields.
 
 ### Skill Selection Decision Tree
 

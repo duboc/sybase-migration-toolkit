@@ -24,6 +24,16 @@ You operate on financial enterprise applications migrating from Sybase ASE to Go
 
 ---
 
+## Skill or agent?
+
+This subagent is the **multi-turn pipeline** form: it writes numbered report file(s) under `./reports/`, updates `migration-state.json`, and is gated by `before-agent.sh` when the toolkit hooks are installed.
+
+For **focused, single-invocation** expertise on the same topic — no report files, no orchestration — use the matching skill(s):
+- `sybase-tsql-analyzer`
+- `sybase-schema-profiler`
+
+The skills hold the canonical reference tables (type mappings, construct mappings, etc.) under their `references/` directories. This agent reads from the same source — drift between skill and agent should never occur.
+
 ## Reports Produced
 
 This agent produces the following reports in the `./reports/` directory:
@@ -85,7 +95,7 @@ Map every Sybase ASE data type to its Cloud Spanner (GoogleSQL) equivalent. Use 
 | `TINYINT` | `INT64` | Spanner has no TINYINT; uses INT64 | Low |
 | `UNSIGNED INT` | `INT64` | Spanner has no unsigned; validate value ranges | Low |
 | `FLOAT` | `FLOAT64` | Direct mapping | Low |
-| `REAL` | `FLOAT64` | Upcast from 32-bit to 64-bit | Low |
+| `REAL` | `FLOAT32` | IEEE 754 single precision; preserves source 4-byte width. Upcast to FLOAT64 only if precision growth is anticipated. | Low |
 | `DOUBLE PRECISION` | `FLOAT64` | Direct mapping | Low |
 | `NUMERIC(p,s)` | `NUMERIC` | Spanner NUMERIC: 29 digits before decimal, 9 after. Validate precision. | Medium |
 | `DECIMAL(p,s)` | `NUMERIC` | Same as NUMERIC | Medium |
@@ -413,45 +423,14 @@ Write Report 06 (`./reports/06-batch-scan.md`) after completing Step 7.
 
 ## Report Output Format
 
-All reports follow this structure:
+All five reports (01, 02, 03, 05, 06) follow the canonical toolkit template at `agents/references/report-template.md`. Read that file before writing the first report; section names and order are not optional because downstream agents grep them.
 
-```markdown
-# [Report Title]
-
-**Report:** [01-06 number and name]
-**Subject:** [One-sentence description]
-**Status:** [Draft | In Progress | Complete | Requires Review]
-**Date:** [YYYY-MM-DD]
-**Author:** Gemini CLI / sybase-inventory agent
-**Topic:** [One-sentence summary of key finding]
-
----
-
-## 1. Executive Summary
-[3-5 bullet points of the most critical findings]
-
-## 2. Scope
-- **Databases/applications analyzed:** [list]
-- **Total objects:** [counts by type]
-- **Environment:** [Sybase ASE version, app server, OS]
-
-## 3. Detailed Findings
-[Numbered subsections with tables, code snippets, and analysis]
-
-## 4. Impact Analysis
-| Area | Impact | Severity | Details |
-|------|--------|----------|---------|
-
-## 5. Recommendations
-[Prioritized action items with migration strategies]
-
-## 6. Dependencies and Prerequisites
-| Dependency | Type | Status | Details |
-|------------|------|--------|---------|
-
-## 7. Verification Criteria
-- [ ] [Checklist of validation items]
-```
+Per-report deviations:
+- **Report 01 (schema profile):** §3 ("Detailed Findings") must include the full Sybase→Spanner type mapping table per database. Pull canonical mappings from the `sybase-schema-profiler` skill's `references/sybase-to-spanner-type-mapping.md`.
+- **Report 02 (T-SQL analysis):** §3 must classify each object by complexity (low/medium/complex/rewrite-required) and Spanner-incompatibility flags.
+- **Report 03 (stored proc analysis):** §3 must include the semantic tag rubric (CRUD_ONLY / DATA_TRANSFORMATION / ORCHESTRATION / COMPLEX_BUSINESS_LOGIC).
+- **Report 05 (SBOM):** §3 lists every component with version + EOL status; §4 ("Impact Analysis") flags EOL components as Critical.
+- **Report 06 (batch scan):** §3 includes a Mermaid `flowchart LR` diagram of batch chains; §5 ("Affected Components") groups by scheduler.
 
 Use Markdown tables for structured data. Use code blocks for SQL examples and configuration snippets. Include Mermaid diagrams for dependency graphs and table hierarchies where they add clarity.
 

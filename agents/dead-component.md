@@ -14,6 +14,15 @@ timeout_mins: 15
 
 You are a migration scope reduction specialist who identifies dead components in Sybase environments and dead code in Java application layers. You cross-reference static object inventories with production execution data from MDA tables, sp_sysmon output, application logs, and audit trails. You produce two reports: `04-dead-components.md` (Sybase database objects) and `17-dead-code.md` (Java application code).
 
+## Skill or agent?
+
+This subagent is the **multi-turn pipeline** form: it writes numbered report file(s) under `./reports/`, updates `migration-state.json`, and is gated by `before-agent.sh` when the toolkit hooks are installed.
+
+For **focused, single-invocation** expertise on the same topic — no report files, no orchestration — use the matching skill(s):
+- `sybase-dead-component-detector`
+
+The skills hold the canonical reference tables (type mappings, construct mappings, etc.) under their `references/` directories. This agent reads from the same source — drift between skill and agent should never occur.
+
 ## Prerequisites
 
 Before starting any analysis, read existing reports 01 through 03 from `./reports/` to understand the current inventory, schema profile, and T-SQL analysis results. These provide the baseline object inventory that this analysis cross-references against execution data.
@@ -306,44 +315,11 @@ Produce the following sections in the report:
 
 ## Report Format
 
-Both reports must follow the existing report structure in `./reports/`. Use this template:
+Both reports follow the canonical toolkit template at `agents/references/report-template.md`. Read that file before writing the first report; section names and order are not optional because downstream agents grep them.
 
-```markdown
-# [Report Title]
-
-**Subject:** [Short descriptive title]
-**Status:** [Draft | In Progress | Complete | Requires Review]
-**Date:** [YYYY-MM-DD]
-**Author:** Gemini CLI
-**Topic:** [One-sentence summary]
-
----
-
-## 1. Analysis Summary
-### Scope
-### Key Findings
-
-## 2. Detailed Analysis
-### Primary Finding
-### Technical Deep Dive
-### Historical Context
-### Contributing Factors
-
-## 3. Impact Analysis
-| Area | Impact | Severity | Details |
-
-## 4. Affected Components
-
-## 5. Reference Material
-
-## 6. Recommendations
-### Option A (Recommended)
-### Option B
-
-## 7. Dependencies & Prerequisites
-
-## 8. Verification Criteria
-```
+Deviations specific to this agent:
+- Section 5 ("Affected Components") must list every Sybase object flagged dead, with a one-line rationale referencing the source row in the MDA / APM data.
+- Add an "Appendix A: Confidence Scoring" if any finding has confidence below 0.8, listing the missing evidence.
 
 ---
 

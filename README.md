@@ -1,6 +1,12 @@
 # Sybase Migration Toolkit
 
-A collection of [Gemini CLI](https://github.com/google-gemini/gemini-cli) skills and agents for migrating Sybase ASE databases to Cloud Spanner in financial enterprise environments.
+A collection of [Gemini CLI](https://github.com/google-gemini/gemini-cli) skills, agents, and hooks for migrating Sybase ASE databases to Cloud Spanner in financial enterprise environments.
+
+The toolkit ships three coordinated layers:
+
+- **Skills** — focused, on-demand expertise (12 skills across 4 phases).
+- **Agents** — autonomous specialists that produce numbered reports (9 agents).
+- **Hooks** — Gemini CLI hooks that turn the pipeline into a stateful, auditable, guarded workflow (7 hooks).
 
 ---
 
@@ -131,6 +137,90 @@ Synthesis:           @migration-orchestrator
 | Skill | Description | Install |
 |-------|-------------|---------|
 | [sybase-spanner-migration-orchestrator](skills/sybase-spanner-migration-orchestrator/) | Orchestrate the full Sybase-to-Spanner migration lifecycle across 4 phases, coordinating 11 skills with compliance gates and executive dashboards | `curl -fsSL https://raw.githubusercontent.com/duboc/sybase-migration-toolkit/main/scripts/install.sh \| bash -s -- sybase-spanner-migration-orchestrator` |
+
+---
+
+## Hooks
+
+The agent installer (`install-agents.sh`) deploys five [Gemini CLI hooks](https://github.com/google-gemini/gemini-cli) plus one CLI utility. The hook layer is **observation + adaptive gating only** — it does not block destructive commands or scrub secrets. Its three goals:
+
+- **Auditable** — every tool call appends a rich JSON record to `.gemini/audit/migration-audit.jsonl`. A separate review agent (or a human) can then run `hooks/audit-summary.sh --markdown` to inspect the run after the fact: which reports were produced, in what order, what is still missing, what each agent did.
+- **Phase-gated and adaptive** — `before-agent.sh` denies a downstream agent when its prerequisite reports are missing, AND emits a `systemMessage` instructing the agent to run in *static-only mode* or *skip a specific report* when a required data source is absent. Sometimes the user only has source code; the gate adapts instead of demanding telemetry that does not exist.
+- **Stateful** — `migration-state.json` is updated after every numbered report write so a fresh session resumes mid-pipeline.
+
+| Hook / utility | Event(s) | What it does |
+|---|---|---|
+| `session-start` | `SessionStart` | Inject phase + state context. If the data-source intake is not yet captured, prompt the orchestrator to ask the user 5 yes/no questions before launching Phase 1+ agents. |
+| `before-agent` | `BeforeAgent` | Deny when prereq reports are missing (with suggested next agent). Allow with a `systemMessage` when a data source is missing — agent runs in static-only mode or skips a specific report. |
+| `after-tool-report` | `AfterTool` | Update `reports/migration-state.json` after every numbered report write. |
+| `audit-log` | `AfterTool`, `Notification` | Append an enriched JSON record (ts, session, tool, agent, file, report ID, phase, outcome, content size) for every event. |
+| `pre-compress` | `PreCompress` | Snapshot state + report inventory before context compression. |
+| `audit-summary` (CLI utility, not a hook) | — | Read the audit log and emit a JSON or markdown digest. Designed for a review agent to run as a tool call and reason about whether the pipeline did its job. |
+
+### Data-source intake (asked once, drives every downstream gate)
+
+At the start of a project the orchestrator asks 5 yes/no questions and persists the answers to `reports/migration-state.json` under `intake_answers.data_sources`. The gate then adapts:
+
+| Data source | When `false`, what changes |
+|---|---|
+| `production_telemetry` (MDA tables, sp_sysmon) | `@risk-assessment` reports 14, 15 → static-only with reduced confidence; `@dead-component` report 04 → static-only. |
+| `application_logs` (APM, prod logs) | `@dead-component` report 17 → zero-reference detection only. |
+| `replication_config` (Sybase RepServer files) | `@data-flow` skips report 12 entirely. |
+| `iq_exports` (Sybase IQ DDL/data) | `@risk-assessment` report 16 IQ→BigQuery analysis flagged as gap. |
+| `git_history` (full repo history) | `@risk-assessment` report 13 cannot use churn scoring; `@modernization` report 23 cannot use commit-history evidence. |
+
+If `production_telemetry` AND `application_logs` are both `false`, `@dead-component` runs in pure static mode and every finding is marked confidence=`static-only`.
+
+### Where things land
+
+```
+<project>/
+  reports/
+    01-schema-profile.md        # written by @sybase-inventory
+    ...
+    migration-state.json        # written by after-tool-report.sh
+  .gemini/
+    audit/
+      migration-audit.jsonl     # append-only, by audit-log.sh
+    snapshots/
+      pre-compress-<ts>.md      # by pre-compress.sh
+```
+
+### Inspect the run with `audit-summary.sh`
+
+```bash
+hooks/audit-summary.sh --markdown          # human / LLM-readable digest
+hooks/audit-summary.sh --json --pretty     # programmatic
+hooks/audit-summary.sh --report 18         # all events touching report 18
+hooks/audit-summary.sh --since 2026-05-02T00:00:00Z
+hooks/audit-summary.sh --raw               # raw JSONL lines after filters
+```
+
+The markdown output lists: total events, time window, errors, every report written (with timestamp + size + write count), every canonical ID still missing, and activity by phase / tool / agent. A reviewer agent reads this first, then opens the specific report files to evaluate quality.
+
+### Managing hooks
+
+Hooks are namespaced `sybase-migration/<name>` so they can be toggled individually:
+
+```
+/hooks panel
+/hooks disable sybase-migration/before-agent
+/hooks enable  sybase-migration/before-agent
+```
+
+To install only the hooks (e.g., after editing them locally):
+
+```bash
+./scripts/install-agents.sh --hooks-only
+```
+
+To install agents + settings without hooks:
+
+```bash
+./scripts/install-agents.sh --no-hooks
+```
+
+See [`hooks/README.md`](hooks/README.md) for the full contract, record schema, and per-agent gating logic.
 
 ---
 
