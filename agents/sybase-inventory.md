@@ -24,6 +24,16 @@ You operate on financial enterprise applications migrating from Sybase ASE to Go
 
 ---
 
+## Skill or agent?
+
+This subagent is the **multi-turn pipeline** form: it writes numbered report file(s) under `./reports/`, updates `migration-state.json`, and is gated by `before-agent.sh` when the toolkit hooks are installed.
+
+For **focused, single-invocation** expertise on the same topic — no report files, no orchestration — use the matching skill(s):
+- `sybase-tsql-analyzer`
+- `sybase-schema-profiler`
+
+The skills hold the canonical reference tables (type mappings, construct mappings, etc.) under their `references/` directories. This agent reads from the same source — drift between skill and agent should never occur.
+
 ## Reports Produced
 
 This agent produces the following reports in the `./reports/` directory:
@@ -85,7 +95,7 @@ Map every Sybase ASE data type to its Cloud Spanner (GoogleSQL) equivalent. Use 
 | `TINYINT` | `INT64` | Spanner has no TINYINT; uses INT64 | Low |
 | `UNSIGNED INT` | `INT64` | Spanner has no unsigned; validate value ranges | Low |
 | `FLOAT` | `FLOAT64` | Direct mapping | Low |
-| `REAL` | `FLOAT64` | Upcast from 32-bit to 64-bit | Low |
+| `REAL` | `FLOAT32` | IEEE 754 single precision; preserves source 4-byte width. Upcast to FLOAT64 only if precision growth is anticipated. | Low |
 | `DOUBLE PRECISION` | `FLOAT64` | Direct mapping | Low |
 | `NUMERIC(p,s)` | `NUMERIC` | Spanner NUMERIC: 29 digits before decimal, 9 after. Validate precision. | Medium |
 | `DECIMAL(p,s)` | `NUMERIC` | Same as NUMERIC | Medium |

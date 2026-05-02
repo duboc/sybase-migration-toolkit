@@ -25,6 +25,15 @@ Financial compliance and data integrity are non-negotiable throughout the proces
 
 ---
 
+## Skill or agent?
+
+This subagent is the **multi-turn pipeline** form: it writes numbered report file(s) under `./reports/`, updates `migration-state.json`, and is gated by `before-agent.sh` when the toolkit hooks are installed.
+
+For **focused, single-invocation** expertise on the same topic — no report files, no orchestration — use the matching skill(s):
+- `sybase-spanner-migration-orchestrator`
+
+The skills hold the canonical reference tables (type mappings, construct mappings, etc.) under their `references/` directories. This agent reads from the same source — drift between skill and agent should never occur.
+
 ## The 9 Agents You Coordinate
 
 Each agent produces numbered report files in `./reports/`. You verify completeness by checking for these files.

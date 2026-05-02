@@ -7,6 +7,14 @@ description: "Profile Sybase query performance characteristics, access patterns,
 
 You are a performance engineering specialist profiling Sybase workloads for Spanner-optimized schema design. You analyze MDA table exports, sp_sysmon output, and query patterns to classify table access profiles, identify hot tables, catalog dominant query patterns, and map peak load characteristics. You produce per-table Spanner optimization recommendations including interleaved table candidates, secondary index designs, stale read opportunities, and autoscaling guidance for financial workload patterns.
 
+## Skill or agent?
+
+This is the **focused, single-invocation** form of this analysis. Activate it for a one-pass answer in the current session — no report files, no phase coordination.
+
+For the **multi-turn pipeline** version that writes numbered report file(s) under `./reports/`, updates `migration-state.json`, and respects the toolkit phase-gate hooks, use the matching subagent: `@risk-assessment`.
+
+Both share the canonical reference tables in this skill's `references/` directory. Pick the skill for ad-hoc questions; pick the agent for runs that feed `@migration-orchestrator`.
+
 ## Activation
 
 When user asks to profile Sybase performance for migration, analyze query patterns for Spanner optimization, design Spanner secondary indexes, establish performance baselines, classify table access patterns, or map financial workload timing profiles.
@@ -431,8 +439,6 @@ After generating the performance analysis, **CRITICAL:** Do NOT generate the HTM
 Write the HTML file to `./diagrams/sybase-performance-profiler-report.html` and open it in the browser.
 
 ## Guidelines
-- **Deep Analysis Mandate:** Take your time and use as many turns as necessary to perform an exhaustive analysis. Do not rush. If there are many files to review, process them in batches across multiple turns. Prioritize depth, accuracy, and thoroughness over speed.
-
 - Always check for Phase 1 outputs (sybase-schema-profiler) in `./reports/` before starting
 - Parse MDA table exports as CSV, JSON, or tab-delimited format
 - If no MDA data, parse sp_sysmon text output for key metrics

@@ -30,15 +30,24 @@ REPORTS="$(reports_dir)"
 declare -a required=()
 case "$AGENT" in
   risk-assessment)
+    # Needs Phase 1 schema/T-SQL + Phase 2 data flow to score business risk.
     required=(01 02 03 07 08)
     ;;
   spanner-schema)
-    required=(01 02 03 13 14 15 16)
+    # Per agents/spanner-schema.md "Prerequisites": needs schema (01),
+    # dead-component exclusions (04), replication topology (12), perf (14),
+    # transactions (15), analytics OLTP/analytics split (16).
+    required=(01 04 12 14 15 16)
     ;;
   service-extraction)
-    required=(02 03 14 15)
+    # Per agents/service-extraction.md "Prerequisites": needs T-SQL analysis
+    # (02), stored proc inventory (03), transactions (15), analytics (16),
+    # and the target Spanner schema (18).
+    required=(02 03 15 16 18)
     ;;
   modernization)
+    # Needs the integration catalog set (09-11) to redesign ESB flows, plus
+    # performance/transactions to size event/serverless replacements.
     required=(09 10 11 14 15)
     ;;
   migration-orchestrator)
@@ -54,6 +63,9 @@ for id in "${required[@]}"; do
     missing+=("${id}")
   fi
 done
+# IDs above mirror the canonical numbering documented in
+# agents/migration-orchestrator.md (Phase / Report Files table) — keep in sync
+# with each agent's "Prerequisites" section.
 
 if (( ${#missing[@]} > 0 )); then
   reason="Phase gate not met for @${AGENT}: missing reports for IDs ${missing[*]}. Run upstream agents first (see README execution order) or invoke @migration-orchestrator to coordinate."
