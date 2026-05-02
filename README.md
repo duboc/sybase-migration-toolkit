@@ -1,6 +1,12 @@
 # Sybase Migration Toolkit
 
-A collection of [Gemini CLI](https://github.com/google-gemini/gemini-cli) skills and agents for migrating Sybase ASE databases to Cloud Spanner in financial enterprise environments.
+A collection of [Gemini CLI](https://github.com/google-gemini/gemini-cli) skills, agents, and hooks for migrating Sybase ASE databases to Cloud Spanner in financial enterprise environments.
+
+The toolkit ships three coordinated layers:
+
+- **Skills** — focused, on-demand expertise (12 skills across 4 phases).
+- **Agents** — autonomous specialists that produce numbered reports (9 agents).
+- **Hooks** — Gemini CLI hooks that turn the pipeline into a stateful, auditable, guarded workflow (7 hooks).
 
 ---
 
@@ -131,6 +137,66 @@ Synthesis:           @migration-orchestrator
 | Skill | Description | Install |
 |-------|-------------|---------|
 | [sybase-spanner-migration-orchestrator](skills/sybase-spanner-migration-orchestrator/) | Orchestrate the full Sybase-to-Spanner migration lifecycle across 4 phases, coordinating 11 skills with compliance gates and executive dashboards | `curl -fsSL https://raw.githubusercontent.com/duboc/sybase-migration-toolkit/main/scripts/install.sh \| bash -s -- sybase-spanner-migration-orchestrator` |
+
+---
+
+## Hooks
+
+The agent installer (`install-agents.sh`) also deploys seven [Gemini CLI hooks](https://github.com/google-gemini/gemini-cli) that fire during the agent loop. They make the pipeline:
+
+- **Stateful** — `migration-state.json` is updated automatically after every report write.
+- **Guarded** — destructive shell commands and writes containing secrets are blocked before execution.
+- **Auditable** — every tool call is appended to `.gemini/audit/migration-audit.jsonl` for compliance review.
+- **Phase-gated** — downstream agents (`@spanner-schema`, `@service-extraction`, `@modernization`, `@risk-assessment`) refuse to run until their prerequisite reports exist.
+
+| Hook | Event | Matcher | What it does |
+|---|---|---|---|
+| `session-start` | `SessionStart` | `*` | Detects a Sybase project and injects the current phase, last completed report, and reports-present list into the session. |
+| `before-tool-shell` | `BeforeTool` | `run_shell_command` | Blocks `DROP`, `TRUNCATE`, `DELETE FROM`, `rm -rf reports/`, force pushes, fork bombs, direct DML against Sybase/Spanner instances. |
+| `before-tool-write` | `BeforeTool` | `write_file\|replace\|edit\|create_file` | Enforces `NN-name.md` report naming under `reports/`; refuses writes containing AWS/GCP/GitHub/Slack tokens, PEM keys, or embedded passwords. |
+| `after-tool-report` | `AfterTool` | `write_file\|replace\|edit\|create_file` | Updates `reports/migration-state.json` with the new phase, the last completed report, and a fresh report list. |
+| `before-agent` | `BeforeAgent` | `*` | Phase-gate validator. Refuses `@spanner-schema` until reports 01-03, 13-16 are present; similar gates for the other downstream agents. |
+| `audit-log` | `AfterTool`, `Notification` | `*` | Appends a JSONL record (timestamp, session, tool, file, command preview) to `.gemini/audit/migration-audit.jsonl`. |
+| `pre-compress` | `PreCompress` | `*` | Snapshots `migration-state.json` and the report inventory to `.gemini/snapshots/pre-compress-<ts>.md` so the post-compression agent can re-orient cheaply. |
+
+### Where things land
+
+```
+<project>/
+  reports/
+    01-schema-profile.md        # written by @sybase-inventory
+    ...
+    migration-state.json        # written by after-tool-report.sh
+  .gemini/
+    audit/
+      migration-audit.jsonl     # append-only, by audit-log.sh
+    snapshots/
+      pre-compress-<ts>.md      # by pre-compress.sh
+```
+
+### Managing hooks
+
+Hooks are namespaced `sybase-migration/<name>` so they can be toggled individually without touching the others:
+
+```
+/hooks panel
+/hooks disable sybase-migration/before-tool-shell
+/hooks enable  sybase-migration/before-tool-shell
+```
+
+To install only the hooks (e.g., after editing them locally):
+
+```bash
+./scripts/install-agents.sh --hooks-only
+```
+
+To install agents + settings without hooks:
+
+```bash
+./scripts/install-agents.sh --no-hooks
+```
+
+See [`hooks/README.md`](hooks/README.md) for the contract details and security notes.
 
 ---
 

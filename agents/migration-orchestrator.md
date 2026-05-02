@@ -67,6 +67,32 @@ To verify a report exists and is substantive (not just a stub):
 4. Check for key sections expected by downstream phases
 ```
 
+### Hook-Managed State (Read-Only for You)
+
+When the Sybase migration toolkit hooks are installed, several state artifacts are
+maintained automatically by the Gemini CLI hook layer. **Read these first** at the
+start of every turn before re-deriving state from disk:
+
+| Artifact | Maintained by | Use it for |
+|---|---|---|
+| `reports/migration-state.json` | `after-tool-report.sh` (AfterTool) | Current phase, last completed report, list of reports present. Source of truth across sessions. |
+| `.gemini/audit/migration-audit.jsonl` | `audit-log.sh` (AfterTool, Notification) | Forensic record of every tool call. Cite when summarizing what was done in a phase. |
+| `.gemini/snapshots/pre-compress-*.md` | `pre-compress.sh` (PreCompress) | Pre-compression snapshots. Read the most recent one when resuming after compaction. |
+
+You **do not need to write** `current_phase`, `last_completed_report`, or the `reports`
+list yourself — the AfterTool hook does that on every report write. You **may** add or
+update richer fields (e.g., `phase_gates`, `intake_answers`, `scoping_decisions`) and
+they will be preserved across hook updates because the hook merges with the existing
+state object.
+
+If `migration-state.json` does not exist on first load, that is expected on a fresh
+project — initialize it yourself with the intake/scoping fields once Step 0 is complete.
+
+The `before-agent.sh` hook will refuse to launch `@spanner-schema`, `@service-extraction`,
+`@modernization`, or `@risk-assessment` if their prerequisite reports are missing — when
+the user reports a phase-gate denial, your job is to identify the missing reports
+(listed in the deny reason) and instruct the user which upstream agent to run.
+
 ---
 
 ## Step 0: Intake and Scoping (30-Question Assessment)
