@@ -49,13 +49,14 @@ Available agents:
   migration-orchestrator Master orchestrator coordinating all phases
 
 Installed hooks (see hooks/README.md):
-  session-start          SessionStart  - inject phase/state context
-  before-tool-shell      BeforeTool    - block destructive shell commands
-  before-tool-write      BeforeTool    - enforce report naming, scan secrets
-  after-tool-report      AfterTool     - update migration-state.json
-  before-agent           BeforeAgent   - enforce phase-gate prerequisites
-  audit-log              AfterTool/Notification - append compliance audit trail
+  session-start          SessionStart  - inject phase/state + data-source intake
+  before-agent           BeforeAgent   - phase gate + adaptive mode (static-only / skip)
+  after-tool-report      AfterTool     - update migration-state.json on report writes
+  audit-log              AfterTool/Notification - rich JSONL trail for review agents
   pre-compress           PreCompress   - snapshot state before compression
+
+Installed utilities (not hooks):
+  audit-summary.sh       - digest the audit log as JSON or markdown for inspection
 EOF
 }
 

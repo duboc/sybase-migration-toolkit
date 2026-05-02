@@ -142,22 +142,34 @@ Synthesis:           @migration-orchestrator
 
 ## Hooks
 
-The agent installer (`install-agents.sh`) also deploys seven [Gemini CLI hooks](https://github.com/google-gemini/gemini-cli) that fire during the agent loop. They make the pipeline:
+The agent installer (`install-agents.sh`) deploys five [Gemini CLI hooks](https://github.com/google-gemini/gemini-cli) plus one CLI utility. The hook layer is **observation + adaptive gating only** — it does not block destructive commands or scrub secrets. Its three goals:
 
-- **Stateful** — `migration-state.json` is updated automatically after every report write.
-- **Guarded** — destructive shell commands and writes containing secrets are blocked before execution.
-- **Auditable** — every tool call is appended to `.gemini/audit/migration-audit.jsonl` for compliance review.
-- **Phase-gated** — downstream agents (`@spanner-schema`, `@service-extraction`, `@modernization`, `@risk-assessment`) refuse to run until their prerequisite reports exist.
+- **Auditable** — every tool call appends a rich JSON record to `.gemini/audit/migration-audit.jsonl`. A separate review agent (or a human) can then run `hooks/audit-summary.sh --markdown` to inspect the run after the fact: which reports were produced, in what order, what is still missing, what each agent did.
+- **Phase-gated and adaptive** — `before-agent.sh` denies a downstream agent when its prerequisite reports are missing, AND emits a `systemMessage` instructing the agent to run in *static-only mode* or *skip a specific report* when a required data source is absent. Sometimes the user only has source code; the gate adapts instead of demanding telemetry that does not exist.
+- **Stateful** — `migration-state.json` is updated after every numbered report write so a fresh session resumes mid-pipeline.
 
-| Hook | Event | Matcher | What it does |
-|---|---|---|---|
-| `session-start` | `SessionStart` | `*` | Detects a Sybase project and injects the current phase, last completed report, and reports-present list into the session. |
-| `before-tool-shell` | `BeforeTool` | `run_shell_command` | Blocks `DROP`, `TRUNCATE`, `DELETE FROM`, `rm -rf reports/`, force pushes, fork bombs, direct DML against Sybase/Spanner instances. |
-| `before-tool-write` | `BeforeTool` | `write_file\|replace\|edit\|create_file` | Enforces `NN-name.md` report naming under `reports/`; refuses writes containing AWS/GCP/GitHub/Slack tokens, PEM keys, or embedded passwords. |
-| `after-tool-report` | `AfterTool` | `write_file\|replace\|edit\|create_file` | Updates `reports/migration-state.json` with the new phase, the last completed report, and a fresh report list. |
-| `before-agent` | `BeforeAgent` | `*` | Phase-gate validator. Refuses `@spanner-schema` until reports 01-03, 13-16 are present; similar gates for the other downstream agents. |
-| `audit-log` | `AfterTool`, `Notification` | `*` | Appends a JSONL record (timestamp, session, tool, file, command preview) to `.gemini/audit/migration-audit.jsonl`. |
-| `pre-compress` | `PreCompress` | `*` | Snapshots `migration-state.json` and the report inventory to `.gemini/snapshots/pre-compress-<ts>.md` so the post-compression agent can re-orient cheaply. |
+| Hook / utility | Event(s) | What it does |
+|---|---|---|
+| `session-start` | `SessionStart` | Inject phase + state context. If the data-source intake is not yet captured, prompt the orchestrator to ask the user 5 yes/no questions before launching Phase 1+ agents. |
+| `before-agent` | `BeforeAgent` | Deny when prereq reports are missing (with suggested next agent). Allow with a `systemMessage` when a data source is missing — agent runs in static-only mode or skips a specific report. |
+| `after-tool-report` | `AfterTool` | Update `reports/migration-state.json` after every numbered report write. |
+| `audit-log` | `AfterTool`, `Notification` | Append an enriched JSON record (ts, session, tool, agent, file, report ID, phase, outcome, content size) for every event. |
+| `pre-compress` | `PreCompress` | Snapshot state + report inventory before context compression. |
+| `audit-summary` (CLI utility, not a hook) | — | Read the audit log and emit a JSON or markdown digest. Designed for a review agent to run as a tool call and reason about whether the pipeline did its job. |
+
+### Data-source intake (asked once, drives every downstream gate)
+
+At the start of a project the orchestrator asks 5 yes/no questions and persists the answers to `reports/migration-state.json` under `intake_answers.data_sources`. The gate then adapts:
+
+| Data source | When `false`, what changes |
+|---|---|
+| `production_telemetry` (MDA tables, sp_sysmon) | `@risk-assessment` reports 14, 15 → static-only with reduced confidence; `@dead-component` report 04 → static-only. |
+| `application_logs` (APM, prod logs) | `@dead-component` report 17 → zero-reference detection only. |
+| `replication_config` (Sybase RepServer files) | `@data-flow` skips report 12 entirely. |
+| `iq_exports` (Sybase IQ DDL/data) | `@risk-assessment` report 16 IQ→BigQuery analysis flagged as gap. |
+| `git_history` (full repo history) | `@risk-assessment` report 13 cannot use churn scoring; `@modernization` report 23 cannot use commit-history evidence. |
+
+If `production_telemetry` AND `application_logs` are both `false`, `@dead-component` runs in pure static mode and every finding is marked confidence=`static-only`.
 
 ### Where things land
 
@@ -174,14 +186,26 @@ The agent installer (`install-agents.sh`) also deploys seven [Gemini CLI hooks](
       pre-compress-<ts>.md      # by pre-compress.sh
 ```
 
+### Inspect the run with `audit-summary.sh`
+
+```bash
+hooks/audit-summary.sh --markdown          # human / LLM-readable digest
+hooks/audit-summary.sh --json --pretty     # programmatic
+hooks/audit-summary.sh --report 18         # all events touching report 18
+hooks/audit-summary.sh --since 2026-05-02T00:00:00Z
+hooks/audit-summary.sh --raw               # raw JSONL lines after filters
+```
+
+The markdown output lists: total events, time window, errors, every report written (with timestamp + size + write count), every canonical ID still missing, and activity by phase / tool / agent. A reviewer agent reads this first, then opens the specific report files to evaluate quality.
+
 ### Managing hooks
 
-Hooks are namespaced `sybase-migration/<name>` so they can be toggled individually without touching the others:
+Hooks are namespaced `sybase-migration/<name>` so they can be toggled individually:
 
 ```
 /hooks panel
-/hooks disable sybase-migration/before-tool-shell
-/hooks enable  sybase-migration/before-tool-shell
+/hooks disable sybase-migration/before-agent
+/hooks enable  sybase-migration/before-agent
 ```
 
 To install only the hooks (e.g., after editing them locally):
@@ -196,7 +220,7 @@ To install agents + settings without hooks:
 ./scripts/install-agents.sh --no-hooks
 ```
 
-See [`hooks/README.md`](hooks/README.md) for the contract details and security notes.
+See [`hooks/README.md`](hooks/README.md) for the full contract, record schema, and per-agent gating logic.
 
 ---
 

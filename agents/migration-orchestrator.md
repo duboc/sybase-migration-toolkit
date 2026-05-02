@@ -135,10 +135,54 @@ Group these in batches of 3–4 so the user can answer rapidly:
 **Project context (not derivable)**
 7. **Timeline drivers:** Hard deadlines (regulatory, contract, EOL of Sybase support). Soft deadlines (program goals).
 8. **Team capability:** Sybase DBA depth, Cloud / Spanner experience, application engineering capacity. Drives whether to upskill or partner.
-9. **Source artifact availability:** Confirm what is on disk for Phase 1 to read — DDL files, ddlgen output, sp_help output, MDA / APM exports, application code repos. If telemetry is missing, dead-code confidence will be reduced; flag now.
-10. **Existing decisions:** Any predetermined choices the user has already locked (e.g., "we will NOT use FLOAT32 anywhere", "Spring Boot 3 is mandated", "BigQuery is out of scope"). Capture and respect; do not re-debate.
+9. **Existing decisions:** Any predetermined choices the user has already locked (e.g., "Spring Boot 3 is mandated", "BigQuery is out of scope"). Capture and respect; do not re-debate.
 
-Persist all answers to `migration-state.json` under `intake_answers` before launching Phase 1.
+### Data-source intake (drives `before-agent.sh` adaptive gating)
+
+This is question **10**, but it is mechanically separate because the answers change which mode each downstream agent runs in. The `before-agent.sh` hook reads these fields directly from `migration-state.json` and emits a `systemMessage` to each downstream agent telling it whether to run in full mode, static-only mode, or skip a specific report.
+
+**Sometimes the user only has source code.** Do not assume telemetry exists. Ask explicitly:
+
+| Key | Question | Effect when `false` |
+|---|---|---|
+| `production_telemetry` | MDA-table dumps, `sp_sysmon` output, or other monitoring exports? | `@risk-assessment` reports 14/15 run static-only with REDUCED confidence; `@dead-component` report 04 runs static-only. |
+| `application_logs` | Application logs, APM data, or audit trails for Java / middle tier? | `@dead-component` report 17 runs static-only (zero-reference detection only). |
+| `replication_config` | Sybase Replication Server config files (`rs_*.cfg`, subscription dumps)? | `@data-flow` skips report 12 entirely; note the omission in report 07 §1. |
+| `iq_exports` | Sybase IQ schema or data exports (only if IQ is in scope)? | `@risk-assessment` report 16 IQ→BigQuery analysis incomplete; flag as gap. |
+| `git_history` | Full git history for the source repos (not just a snapshot)? | `@risk-assessment` report 13 cannot use churn-based scoring; uses complexity tags only. `@modernization` report 23 cannot use commit-history evidence. |
+
+`source_code` is always assumed `true` — the migration cannot proceed otherwise.
+
+### Persist intake to state
+
+After all 10 essentials are answered, write them to `reports/migration-state.json` as:
+
+```json
+{
+  "intake_answers": {
+    "regulatory_scope": [...],
+    "data_residency": "...",
+    "audit_retention_years": ...,
+    "business_windows": "...",
+    "rto_minutes": ...,
+    "rpo_minutes": ...,
+    "risk_tolerance": "phased | parallel | big-bang",
+    "timeline_drivers": "...",
+    "team_capability": {...},
+    "locked_decisions": [...],
+    "data_sources": {
+      "source_code": true,
+      "production_telemetry": false,
+      "application_logs": false,
+      "replication_config": true,
+      "iq_exports": false,
+      "git_history": true
+    }
+  }
+}
+```
+
+The AfterTool hook merges this into the existing state object on every report write, so writes by other agents do not clobber your intake fields.
 
 ### Skill Selection Decision Tree
 

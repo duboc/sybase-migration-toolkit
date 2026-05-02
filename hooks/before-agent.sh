@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
 # BeforeAgent hook:
-# Enforce phase-gate prerequisites before a downstream migration agent runs.
-# For example, @spanner-schema needs the Phase 1-3 reports to exist; running it
-# without those reports produces low-quality output that wastes a context budget.
+# Adaptive phase-gate validator. Two checks per agent:
+#
+#   1. Required upstream reports present? If not, deny with the missing IDs.
+#   2. Required data sources available? Read `intake_answers.data_sources`
+#      from migration-state.json. If a data source is missing the agent can
+#      either:
+#         - run anyway in "static-only mode" (allow + systemMessage), or
+#         - skip a specific report it would otherwise produce.
+#      The agent body is responsible for adapting; this hook tells it which
+#      mode to use.
 #
 # Output contract:
-#   exit 0 + {"decision":"deny","reason":"..."}  -> blocks turn, surfaces reason
-#   exit 0 + {"decision":"allow", systemMessage} -> proceeds, message shown
+#   exit 0 + {"decision":"deny","reason":"..."}  -> blocks turn
+#   exit 0 + {"decision":"allow", systemMessage} -> proceeds with note
+#   exit 0 + {"decision":"allow"}                 -> proceeds silently
 
 set -uo pipefail
 
@@ -20,41 +28,25 @@ AGENT="$(event_field "$EVENT" '.agent')"
 
 # Only enforce gates for our migration agents. Pass through everything else.
 case "$AGENT" in
-  spanner-schema|service-extraction|modernization|risk-assessment|migration-orchestrator) ;;
+  sybase-inventory|dead-component|data-flow|integration-catalog|risk-assessment|spanner-schema|service-extraction|modernization|migration-orchestrator) ;;
   *) emit_allow ""; exit 0 ;;
 esac
 
 REPORTS="$(reports_dir)"
+STATE="$(state_file)"
 
-# Required reports per agent (numeric IDs).
+# --- Phase 1: required reports ---
 declare -a required=()
 case "$AGENT" in
-  risk-assessment)
-    # Needs Phase 1 schema/T-SQL + Phase 2 data flow to score business risk.
-    required=(01 02 03 07 08)
-    ;;
-  spanner-schema)
-    # Per agents/spanner-schema.md "Prerequisites": needs schema (01),
-    # dead-component exclusions (04), replication topology (12), perf (14),
-    # transactions (15), analytics OLTP/analytics split (16).
-    required=(01 04 12 14 15 16)
-    ;;
-  service-extraction)
-    # Per agents/service-extraction.md "Prerequisites": needs T-SQL analysis
-    # (02), stored proc inventory (03), transactions (15), analytics (16),
-    # and the target Spanner schema (18).
-    required=(02 03 15 16 18)
-    ;;
-  modernization)
-    # Needs the integration catalog set (09-11) to redesign ESB flows, plus
-    # performance/transactions to size event/serverless replacements.
-    required=(09 10 11 14 15)
-    ;;
-  migration-orchestrator)
-    # Orchestrator can always run; it produces the prerequisites.
-    emit_allow ""
-    exit 0
-    ;;
+  sybase-inventory)        required=() ;;          # Phase 1 entry — no prereqs
+  dead-component)          required=(01 02 03) ;;  # Needs Phase 1 inventory
+  data-flow)               required=(01 02 03) ;;
+  integration-catalog)     required=(01) ;;
+  risk-assessment)         required=(01 02 03 07 08) ;;
+  spanner-schema)          required=(01 04 12 14 15 16) ;;
+  service-extraction)      required=(02 03 15 16 18) ;;
+  modernization)           required=(09 10 11 14 15) ;;
+  migration-orchestrator)  required=() ;;          # Coordinator, never gated
 esac
 
 missing=()
@@ -63,19 +55,88 @@ for id in "${required[@]}"; do
     missing+=("${id}")
   fi
 done
-# IDs above mirror the canonical numbering documented in
-# agents/migration-orchestrator.md (Phase / Report Files table) — keep in sync
-# with each agent's "Prerequisites" section.
 
 if (( ${#missing[@]} > 0 )); then
-  reason="Phase gate not met for @${AGENT}: missing reports for IDs ${missing[*]}. Run upstream agents first (see README execution order) or invoke @migration-orchestrator to coordinate."
+  next_action=""
+  case "$AGENT" in
+    risk-assessment)    next_action=" Run @sybase-inventory + @data-flow first." ;;
+    spanner-schema)     next_action=" Run @sybase-inventory, @dead-component, @data-flow, and @risk-assessment first." ;;
+    service-extraction) next_action=" Run @sybase-inventory, @risk-assessment, and @spanner-schema first." ;;
+    modernization)      next_action=" Run @integration-catalog and @risk-assessment first." ;;
+    dead-component)     next_action=" Run @sybase-inventory first." ;;
+    data-flow)          next_action=" Run @sybase-inventory first." ;;
+    integration-catalog) next_action=" Run @sybase-inventory first." ;;
+  esac
+  reason="Phase gate not met for @${AGENT}: missing reports for IDs ${missing[*]}.${next_action}"
   emit_deny "$reason"
   exit 0
 fi
 
+# --- Phase 2: data-source aware mode selection ---
+mode_notes=()
+
+if have_jq && [[ -f "$STATE" ]]; then
+  if ! jq -e '.intake_answers.data_sources' "$STATE" >/dev/null 2>&1; then
+    mode_notes+=("Data-source intake not yet captured in migration-state.json. Ask the user the 5 questions listed in the SessionStart context and persist answers under intake_answers.data_sources before proceeding.")
+  else
+    telemetry="$(jq -r '.intake_answers.data_sources.production_telemetry // false' "$STATE")"
+    app_logs="$(jq -r '.intake_answers.data_sources.application_logs // false' "$STATE")"
+    repl="$(jq -r '.intake_answers.data_sources.replication_config // false' "$STATE")"
+    iq="$(jq -r '.intake_answers.data_sources.iq_exports // false' "$STATE")"
+    git_h="$(jq -r '.intake_answers.data_sources.git_history // false' "$STATE")"
+
+    case "$AGENT" in
+      risk-assessment)
+        if [[ "$telemetry" != "true" ]]; then
+          mode_notes+=("Run reports 14 (performance) and 15 (transactions) in STATIC-ONLY mode — no MDA / sp_sysmon data was reported. Mark confidence as REDUCED in §1 Executive Summary and §4 Impact Analysis.")
+        fi
+        if [[ "$git_h" != "true" ]]; then
+          mode_notes+=("Skip churn-based scoring in report 13 — no git history reported. Use complexity tags only.")
+        fi
+        if [[ "$iq" != "true" ]]; then
+          mode_notes+=("If Sybase IQ is in scope, report 16 will be incomplete — no IQ exports reported. Note as a gap and recommend the user produce IQ DDL exports.")
+        fi
+        ;;
+      dead-component)
+        if [[ "$telemetry" != "true" && "$app_logs" != "true" ]]; then
+          mode_notes+=("Run in PURE STATIC mode — no production telemetry and no application logs reported. Detect zero-reference objects only; do NOT claim execution-frequency-based dead status. Mark every finding's confidence as 'static-only' in the report.")
+        elif [[ "$telemetry" != "true" ]]; then
+          mode_notes+=("Run report 04 (Sybase) in static mode (no MDA data). Report 17 (Java) can use application logs.")
+        elif [[ "$app_logs" != "true" ]]; then
+          mode_notes+=("Run report 17 (Java) in static mode (no app logs / APM). Report 04 (Sybase) can use MDA data.")
+        fi
+        ;;
+      data-flow)
+        if [[ "$repl" != "true" ]]; then
+          mode_notes+=("Skip report 12 (replication topology) — no Replication Server configs reported. Note in §1 of report 07 that report 12 is omitted by user input.")
+        fi
+        ;;
+      modernization)
+        if [[ "$git_h" != "true" ]]; then
+          mode_notes+=("Spring Boot upgrade plan (report 23) cannot use commit-history evidence; rely on dependency manifests only.")
+        fi
+        ;;
+    esac
+  fi
+fi
+
+if (( ${#mode_notes[@]} == 0 )); then
+  if have_jq; then
+    jq -nc --arg msg "Phase gate passed for @${AGENT}: all prerequisite reports present, all data sources sufficient for full mode." \
+      '{decision:"allow", systemMessage:$msg}'
+  else
+    printf '{"decision":"allow"}'
+  fi
+  exit 0
+fi
+
+# Combine the mode notes into a single systemMessage. Each note is one bullet.
+joined="$(printf -- '- %s\n' "${mode_notes[@]}")"
 if have_jq; then
-  jq -nc --arg msg "Phase gate passed for @${AGENT}: all prerequisite reports present." \
-    '{decision:"allow", systemMessage:$msg}'
+  jq -nc \
+    --arg agent "$AGENT" \
+    --arg notes "$joined" \
+    '{decision:"allow", systemMessage:("Phase gate passed for @" + $agent + " — adaptive mode active:\n" + $notes)}'
 else
   printf '{"decision":"allow"}'
 fi
